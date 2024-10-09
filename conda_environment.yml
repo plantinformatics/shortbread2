@@ -1,0 +1,22 @@
+name: shortbread2-env
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - fastqc=0.12.1
+  - multiqc=1.14
+  - gatk4=4.6.0.0
+  - picard=3.0.0
+  - samtools=1.17
+  - htslib=1.17
+  - lbzip2=2.5
+  - bzip2=1.0.8
+  - bcftools=1.17
+  - subread=2.0.6
+  - bowtie2=2.5.1
+  - bwa-mem2=2.2.1
+  - bwa=0.7.17
+  - fastp=0.23.4
+  - trimmomatic=0.39
+  - star=2.7.10b

@@ -1,0 +1,10 @@
+title: "Shortbread2 report on the quality of sequencing and genotype calls"
+subtitle: "Scaling SNP calling capabilities with Nextflow"
+intro_text: "Shortbread2 (SB2) is a bioinformatics pipeline for identifying single nucleotide polymorphisms (SNPs) and
+insertions/deletions (indels) from High-Throughput Next Generation Sequencing (NGS) data. This report provides a summary of the results in SB2"
+report_comment: "This report provides an overview of the sequencing quality of the raw reads and the quality of the genotype calls"
+show_analysis_paths: False
+show_analysis_time: True
+custom_logo: "/group/grains/bioinf/shortbread-work/shortbread2/figures/shortbread2-high-resolution-logo.png"
+custom_logo_url: "https://github.com/plantinformatics/shortbread2"
+custom_logo_title: "shortbread2 Github home"
