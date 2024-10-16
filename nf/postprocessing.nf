@@ -29,6 +29,8 @@ process GATHER_VCF {
     statsfile="${mainlogpath}/${chrom}-${type}.stats"
     index=indextype[0]
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo "Gathering files belonging to chromosome ${chrom} together" !
     mkdir -p ${outdir}
     ls *.vcf.gz| split -l 100 - subset_vcfs
@@ -50,7 +52,6 @@ process GATHER_VCF {
 
     # Conditional indexing (simplified)
     [[ "${index}" == "true" ]] && bcftools index -t "${genotypes}" || bcftools index -c "${genotypes}"
-    module load VCFtools
 
     vcftools --gzvcf ${genotypes} --missing-indv --out ${genotypes}
     #Plot missing genotypes
@@ -82,6 +83,8 @@ process FILTER_VAR {
     script:
     genotypefilt="${genotypes.toString().replace('.vcf.gz','-filtered_with-')}MAF_${MAF}-CR_${CR}-AC_${AC}.vcf.gz"
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo "Start filtering for ${genotypes} on ${CR}"
     bcftools index ${genotypes}
     if [[ ${samplecount} -gt 1 ]];
@@ -178,8 +181,9 @@ process GENERATE_VariantList{
     script:
     snplist="${genotypes.replaceAll('.vcf.gz','-List.vcf.gz')}"
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo Generating variant list for "${genotypes}.baseName"
-    module load BCFtools
     echo "Start generating SNP list for ${genotypes} before final step"
     bcftools view --threads ${task.cpus} -G -O z9 -o SNPlist.vcf.gz ${genotypes}
     rsync -rvP SNPlist.vcf.gz ${snplist}
@@ -201,7 +205,7 @@ process GENERATE_VARIANTGRAPH
         output.mkdirs()
     """
     #!/bin/bash
-    module load SAMtools
+    set -euxo pipefail
     chromfasta="${chrom}.fasta"
     samtools faidx ${params.refgenome} ${chrom}>\${chromfasta}
     samtools faidx \${chromfasta}

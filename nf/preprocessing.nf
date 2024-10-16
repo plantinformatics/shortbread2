@@ -28,6 +28,8 @@ process GET_GENOMEINFO {
     if(new File(GATKreferenceVCF).exists())
         refvcf="${resultsdir}/${file(GATKreferenceVCF).baseName}.vcf"
     """
+        #!/bin/bash
+        set -euxo pipefail
         exec > ${logpath}/5_Get_chromsize.log 2>&1
         #Check if fasta file has an index
         fastaindex="${refgenome}.fai"
@@ -40,9 +42,8 @@ process GET_GENOMEINFO {
         dict=\$(echo ${refgenome}|sed -e "s/.[^.]*\$/.dict/")
         if [[ ! -e "\${dict}" ]]
         then
-            module load "picard/${params.picardversion}"
             code="CreateSequenceDictionary R=${refgenome} O=\${dict}"
-            java -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus -jar \${EBROOTPICARD}/picard.jar \${code}
+            picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" \${code}
         fi
         max_chromsize=\$(cat \${dict}|grep -v @HD |sort -k3 -r|head -n1|awk '{print \$3}'|sed -e "s/LN://g")
         min_chromsize=\$(cat \${dict}|grep -v @HD |sort -k3 -r|tail -n1|awk '{print \$3}'|sed -e "s/LN://g")
@@ -51,12 +52,10 @@ process GET_GENOMEINFO {
         echo "Checking if reference VCF has been provided"
         if [[ -e ${GATKreferenceVCF} ]];
         then
-            module load BCFtools
             bcftools view --threads ${task.cpus} -Ou ${GATKreferenceVCF} \\
             |bcftools sort -Ov -o ${refvcf}
             bgzip -kf ${refvcf}
             bcftools index -f ${refvcf}.gz
-            module load "GATK/${params.gatkversion}"
             gatk IndexFeatureFile -I ${refvcf}
         else
             refvcf="null"
@@ -85,32 +84,34 @@ process PREPARE_INTERVALS{
         env intervallist
     script:
     """
-        exec > ${logpath}/3_Prepare_intervals.log 2>&1
-        intervallist=""
-        if [[ "${GATKpathtodbs}" != "" ]];
+    #!/bin/bash
+    set -euxo pipefail
+    exec > ${logpath}/3_Prepare_intervals.log 2>&1
+    intervallist=""
+    if [[ "${GATKpathtodbs}" != "" ]];
+    then
+        #Get interval names used in building the database
+            intervallist=\$(find ${GATKpathtodbs} -name "*\\\$*"|sed 's/\\(.*\\)\\\$/\\1-/'|sed 's/\\(.*\\)\\\$/\\1:/'|xargs echo|xargs -n1 basename)
+    else
+        excludecontigs="no"
+        if [[ ${chromtoexclude} == *"*"* ]];
         then
-            #Get interval names used in building the database
-             intervallist=\$(find ${GATKpathtodbs} -name "*\\\$*"|sed 's/\\(.*\\)\\\$/\\1-/'|sed 's/\\(.*\\)\\\$/\\1:/'|xargs echo|xargs -n1 basename)
-        else
-            excludecontigs="no"
-            if [[ ${chromtoexclude} == *"*"* ]];
-            then
-                excludecontigs="yes"
-            fi
-            #Build interval list based on the dictionary from the reference genome
-            #intervallist=\$(awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");skip=exclude=="true"&&len[2]<intsize;if(!skip){for(i=1;i<=len[2];i+=intsize){j=i+intsize-1; if(j>len[2]){j=len[2]}; printf("%s:%d-%d ", chr[2], i, j )}}}' ${dict})
-            intervallist=\$(grep "^@SQ" ${dict}|awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");printf("%s:%d-%d ", chr[2], 1, len[2])}')
-            if [[ -z "\${intervallist}" ]];
-            then
-                echo "\${intervallist}"
-                echo "Interval list is empty, check interval size or set excludesmallchrs=false"
-                exit 1
-            fi
+            excludecontigs="yes"
         fi
-        if [[ "${mode}" == "test" ]];
+        #Build interval list based on the dictionary from the reference genome
+        #intervallist=\$(awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");skip=exclude=="true"&&len[2]<intsize;if(!skip){for(i=1;i<=len[2];i+=intsize){j=i+intsize-1; if(j>len[2]){j=len[2]}; printf("%s:%d-%d ", chr[2], i, j )}}}' ${dict})
+        intervallist=\$(grep "^@SQ" ${dict}|awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");printf("%s:%d-%d ", chr[2], 1, len[2])}')
+        if [[ -z "\${intervallist}" ]];
         then
-            intervallist=\$(echo \${intervallist}|awk '{for(i=1;i<=1;i++) printf("%s ",\$i)}')
+            echo "\${intervallist}"
+            echo "Interval list is empty, check interval size or set excludesmallchrs=false"
+            exit 1
         fi
+    fi
+    if [[ "${mode}" == "test" ]];
+    then
+        intervallist=\$(echo \${intervallist}|awk '{for(i=1;i<=1;i++) printf("%s ",\$i)}')
+    fi
     """
 }
 
@@ -140,6 +141,8 @@ process PREPARE_SAMPLE_SHEET {
     samplesheet="copy_of_original_samplesheet.csv" //A copy of the samplesheet supplied by user is made to deal with write access issues
     numofcols=13 //Expected number of columns in a samplesheet generated by shortbread2
     """
+    #!/bin/bash
+    #set -euxo pipefail
     exec > ${logpath}/1_Prepare_samplesheet.log 2>&1
     numlibs=0 #Variable to hold the number of libraries generated in samplesheet
     #Make required folders
@@ -346,6 +349,8 @@ process PREPARE_GENOME{
     if("${refannotation}" == "")
         refannotation="-"
     """
+    #!/bin/bash
+    set -euxo pipefail
     exec > ${logpath}/2_Prepare_genome.log 2>&1
     #check if reference genome fasta file has been indexed
     if [ ! "\$(ls ${refgenome}.fai)" ];
@@ -364,22 +369,15 @@ process PREPARE_GENOME{
         #Build index based on choice of aligner
         case "${aligner}" in
             bwamem)
-                module load "BWA/${params.bwamemalignerversion}"
                 bwa index -p \${ref} ${refgenome}
-                module unload "BWA/${params.bwamemalignerversion}"
             ;;
             bwamem2)
-                module load "bwa-mem2/${params.bwamem2alignerversion}"
                 bwa-mem2 index -p \${ref} ${refgenome}
-                module unload "bwa-mem2/${params.bwamem2alignerversion}"
             ;;
             bowtie2)
-                module load "Bowtie2/${params.bowtie2alignerversion}"
                 bowtie2-build ${refgenome} \${ref} --threads $task.cpus --large-index
-                module unload "Bowtie2/${params.bowtie2alignerversion}"
             ;;
             star)
-                module load  "STAR/${params.staralignerversion}"
                 mkdir -p \${ref}
                 STAR --runThreadN $task.cpus \\
                 --runMode genomeGenerate \\
@@ -387,12 +385,9 @@ process PREPARE_GENOME{
                 --genomeFastaFiles ${refgenome} \\
                 --sjdbGTFfile ${refannotation} \\
                 --limitGenomeGenerateRAM 38800807520
-                module unload  "STAR/${params.staralignerversion}"
             ;;
             subread)
-                module load "Subread/${params.subreadalignerversion}"
                 subread-buildindex -o \${ref} ${refgenome}
-                module unload "Subread/${params.subreadalignerversion}"
             ;;
             minimap2)
                 minimap2 -t $task.cpus -d \${ref} ${refgenome}
@@ -442,6 +437,8 @@ process SPLIT_INTERVALS()
       else
           intevs=interval
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo running split intervals
     cp .command.log ${logpath}/4_Split_intervals.log
     """

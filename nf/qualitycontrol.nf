@@ -17,7 +17,7 @@ process RUN_FASTQC {
     multiqc="${output}/Reports/"
     """
     #!/bin/bash
-    module load "FastQC/${params.fastqcversion}"
+    set -euxo pipefail
     logpath="${output}/Logs/01_FastQC/"
     mkdir -p \${logpath}
     mkdir -p "${multiqc}"
@@ -48,28 +48,30 @@ process MULTIQC()
     script:
     multiqc="${output}/Reports/"
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo "Running multiqc step"
-    module load shifter
-    shifter --image=multiqc/multiqc:v1.23 multiqc -f --config ${multiqc_configfile} \\
+    multiqc -f --config ${multiqc_configfile} \\
             -n "Shortbread2-quality-report" \\
             --outdir "${multiqc}" "${multiqc_files}"
     """
 }
 
 process GENERATE_VCFSTATS {
-    tag ""
+    tag "${vcf.baseName}"
     label 'medium'
     label 'qualitycontrol'
     input:
         path vcf
     script:
     """
+    #!/bin/bash
+    set -euxo pipefail
     hets=\$(bcftools view -H -i 'GT="0/1"' ${vcf}|wc -l)
     homs=\$(bcftools view -H -e 'GT="0/1"' ${vcf}|wc -l)
     multialleles=\$(bcftools view -m2 -v snps ${vcf}|wc -l)
     bcftools query -f "%CHROM:%POS\\t%INFO/ExcessHet\\t%INFO/MAF\\t%INFO/CR\\t%INFO/AF\\n" ${vcf} \\
     |awk 'BEGIN{print "POS\\tExcessHet\\tMAF\\tCR\\tAF"} {print \$0}' > /tmp/Stats.data
-    module load R
     Rscript -e "data <- read.table('/tmp/Stats.data', header = T,row.names=1);
                 pdf('\$(pwd)/STATs-plot-RNAseq.pdf',height=10,width=10);
                 par(mfrow=c(2,2));
@@ -84,3 +86,4 @@ process GENERATE_VCFSTATS {
                 dev.off();"
     """
 }
+

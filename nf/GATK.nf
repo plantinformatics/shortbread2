@@ -43,6 +43,8 @@ process RUN_GATK_HAPLOTYPE_CALLER{
         }
 
     """
+    #!/bin/bash
+    set -euxo pipefail
     #create a logging directory for haplotype calls
     mkdir -p ${logpath}
 
@@ -78,7 +80,6 @@ process RUN_GATK_HAPLOTYPE_CALLER{
         allelevcf=null  # Explicitly set to 'null' if the condition is met
     fi
 
-    module load "GATK/${params.gatkversion}"
     #Run haplotype caller on each interval
     exec > Haplotype.log 2>&1
     gatk --java-options "-Xmx30g -Xms30g -XX:ParallelGCThreads=${task.cpus}" HaplotypeCaller  \\
@@ -121,11 +122,12 @@ process BUILD_GENOMICSDBImport{
     chrom="${intervals}".split(":")[0]
     logpath="${mainlogpath}/b_GENOMICSDBImport/"
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo "Running DB import on ${intervals} belonging to chromosome ${chrom}!"
     mkdir -p \$(dirname ${outdir})
     mkdir -p ${logpath}
     mapFilePath="mapfile.tsv"
-    module load "GATK/${params.gatkversion}"
     #Build a sample map file to be passed to dbimport
     for s in ${gvcfs};
     do
@@ -179,6 +181,8 @@ process READ_GATKDBs{
     chrom=chrom="${intervals}".split(":")[0]
     index=false
     """
+    #!/bin/bash
+    set -euxo pipefail
     echo $gatkdb line
     #cat .command.log >> "${mainlogpath}/READ_GATKDBs.log"
     """
@@ -206,6 +210,8 @@ process UPDATE_GENOMICSDB{
     chrom="${intervals}".(":")[0]
     logpath="${mainlogpath}/b_UpdateGENOMICSDBImport/"
     """
+    #!/bin/bash
+    set -euxo pipefail
     mkdir -p ${logpath}
     if [[ ! -e ${outdir} ]];
     then
@@ -217,7 +223,7 @@ process UPDATE_GENOMICSDB{
         echo "\${currentdb}" does not exist
         exit 1
     fi
-    module load "GATK/${params.gatkversion}"
+
     mapFilePath="mapfile.tsv"
     #copy currentdb to temp directory to maintain consistence
     rsync -rvP \${currentdb}/ "${interval}_db"
@@ -277,7 +283,8 @@ process RUN_GENOTYPEGVCFs {
     intervalname="${intervals.replaceAll(':|-|__','_')}"
     outputfile="${intervalname}-genotypes_output.vcf.gz"
     """
-    #/bin/bash
+    #!/bin/bash
+    set -euxo pipefail
     mkdir -p ${logpath}
     echo Perform Joint genotyping of the following intervals ${intervals} on chromosome ${chrom} !
     intervalvcf="${intervals}"
@@ -290,8 +297,6 @@ process RUN_GENOTYPEGVCFs {
     fi
     echo Starting genotyping
     exec > genotype.log 2>&1
-
-    module load "GATK/${params.gatkversion}"
 
     gatk --java-options "-Xmx40G -Xms20G -XX:ParallelGCThreads=${task.cpus}" GenotypeGVCFs \\
         -R ${refgenome} \\
@@ -333,9 +338,9 @@ process RUN_VariantRecalibrator
         outputfile="${intervalname}-genotypes_output.vcf.gz"
     """
     #!/bin/bash
+    set -euxo pipefail
     echo Starting variant recalibration
     exec > genotype.log 2>&1
-    module load "GATK/${params.gatkversion}"
     cd data/; \
     gatk --java-options -Xms4G -Xmx4G -XX:ParallelGCThreads=${task.cpus} VariantRecalibrator \\
       -tranche 100.0 -tranche 99.95 -tranche 99.9 \\

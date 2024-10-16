@@ -9,17 +9,22 @@
  *
  */
 
+/*
+ * Enable DSL 2 syntax
+ */
+nextflow.enable.dsl = 2
+
 log.info """\
 
 G'Day ${params.user}
 
-Running shortbread2 version $workflow.manifest.version, git commit version [$params.gitver]
+Running shortbread2 version ${params.gittag}, git commit version [$params.gitver]
 
 ========================================================================================================================
 $params.loginfo
 ========================================================================================================================
 """
-println "Number of samples included in the analysis:"+String.format("%,d",params.numberofsamples)
+System.out.println "Number of samples included in the analysis:"+String.format("%,d",params.numberofsamples)
 /*
  * Include processes 
  */

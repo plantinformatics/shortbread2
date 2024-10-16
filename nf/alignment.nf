@@ -41,6 +41,8 @@ process RUN_ALIGNMENT {
         trimlog="${logpath}/${trimmethod}/"
     System.out.println("${params.alignlabel}")
     """
+    #!/bin/bash
+    set -euxo pipefail
     samplesheetrow=\$(cat ${samplesheet}|grep -v "SampleName"|awk -v sample=${samplename} -F "," '{if(\$2==sample) print \$0}')
     echo \${samplesheetrow}
     sampleid=\$(echo \${samplesheetrow}|awk -F "," '{printf("%s",\$1)}')
@@ -80,8 +82,6 @@ process RUN_ALIGNMENT {
         fi
         case "${trimmethod}" in
             fastp)
-                module purge
-                module load "fastp/${params.fastptrimversion}"
                 if [ "\${seqtype}" == "PE" ];
                 then
                     fastp -i \${Read1} -I \${Read2} \\
@@ -99,10 +99,8 @@ process RUN_ALIGNMENT {
                     -h "${trimlog}/${samplename}_fastp.html" ${trimmeroptions} \\
                     --thread $task.cpus
                 fi
-            module unload "fastp/${params.fastptrimversion}"
             ;;
             trimmomatic)
-                module load "Trimmomatic/${params.trimmomaticversion}"
                 if [ "\${seqtype}" == "PE" ];
                 then
                     java -jar \$EBROOTTRIMMOMATIC/trimmomatic-0.38.jar \${seqtype} -phred${OFFSET} \\
@@ -118,7 +116,6 @@ process RUN_ALIGNMENT {
                     SLIDINGWINDOW:4:15 MINLEN:36 ${trimmeroptions}
 
                 fi
-                module unload "Trimmomatic/${params.trimmomaticversion}"
             ;;
             *)
                 echo "No valid trimmining method selected!"
@@ -149,7 +146,6 @@ process RUN_ALIGNMENT {
         case "${aligner}" in
             bwamem)
             {
-              module load "BWA/${params.bwamemalignerversion}"
               bwa mem -M -t \${threads_align} ${refindex} \${fast1_paired} \${fast2_paired} \\
               |samtools view - \$threads -Su \\
               |samtools sort - -o \${paired_align} \$threads
@@ -165,12 +161,10 @@ process RUN_ALIGNMENT {
                 |samtools view - \$threads -Su \\
                 |samtools sort - -o \${R2align} \$threads
               fi
-                module unload "BWA/${params.bwamemalignerversion}"
             }
             ;;
             bwamem2)
             {
-               module load "bwa-mem2/${params.bwamem2alignerversion}"
                bwa-mem2 mem -t \${threads_align} ${refindex} \${fast1_paired} \${fast2_paired} \\
                |samtools view - \$threads -Su \\
                |samtools sort - -o \${paired_align} \$threads
@@ -185,12 +179,11 @@ process RUN_ALIGNMENT {
                  | samtools view - \$threads -Su \\
                  | samtools sort - -o \${R2align} \$threads
                fi
-               module unload "bwa-mem2/${params.bwamem2alignerversion}"
+
             }
             ;;
             bowtie2)
             {
-                  module load "Bowtie2/${params.bowtie2alignerversion}"
                   bowtie2 \${threads} -x ${refindex} -1 \${fast1_paired} -2 \${fast2_paired} "${aligneroptions}" \\
                   | samtools view - \${threads} -Su \\
                   | samtools sort - -o \${paired_align} \${threads} -O BAM
@@ -205,12 +198,11 @@ process RUN_ALIGNMENT {
                     | samtools view - \$threads -Su \\
                     | samtools sort - -o \${R2align} \$threads -O BAM
                   fi
-                  module unload "Bowtie2/${params.bowtie2alignerversion}"
             }
             ;;
             star)
             {
-                module load  "STAR/${params.staralignerversion}"
+
                 STAR --genomeDir ${refindex} \\
                      --runThreadN $task.cpus \\
                      --readFilesIn \${fast1_paired} \${fast2_paired}  \\
@@ -242,12 +234,10 @@ process RUN_ALIGNMENT {
                          --readFilesCommand zcat "${aligneroptions}"
                     mv *.out.bam \${R2align}
                   fi
-                  module unload "STAR/${params.staralignerversion}"
             }
             ;;
             subread)
             {
-              module load "Subread/${params.subreadalignerversion}"
               subread-align -i ${refindex} \\
                 -r \${fast1_paired} \\
                 -R \${fast2_paired} \\
@@ -269,7 +259,6 @@ process RUN_ALIGNMENT {
                 --sortReadsByCoordinates \\
                 -T $task.cpus "${aligneroptions}"
               fi
-                module unload "Subread/${params.subreadalignerversion}"
             }
             ;;
             minimap2)
@@ -296,7 +285,6 @@ process RUN_ALIGNMENT {
             ;;
         esac
 
-        module load "picard/${params.picardversion}"
         #If paired end then merge bam files generated from the split trimmed fastq files
         if [[ "\${seqtype}" == "PE" ]];
         then
@@ -307,7 +295,7 @@ process RUN_ALIGNMENT {
             | awk '{for(i=1;i<=NF;i++)printf("I=%s%s", \$i,FS)}END{printf("\\n")}')
 
             #Merge bam files to a single sample - level file
-            java -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus -jar \${EBROOTPICARD}/picard.jar MergeSamFiles \${BAMList} \\
+            picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" MergeSamFiles \${BAMList} \\
                                     O=merged.bam \\
                                     ASSUME_SORTED=true \\
                                     MERGE_SEQUENCE_DICTIONARIES=true \\
@@ -320,7 +308,7 @@ process RUN_ALIGNMENT {
             mv  \${paired_align} merged.bam
         fi
         #Add Read group details to the the bam files
-        java -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus -jar \${EBROOTPICARD}/picard.jar AddOrReplaceReadGroups \\
+        picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" AddOrReplaceReadGroups \\
                        I=merged.bam \\
                        O=${out_samsorted} \\
                        RGID=\${RGID} \\
@@ -384,8 +372,7 @@ process MERGE_BAMS_BYSAMPLEID{
         if [[ \$(echo ${bamlist}|wc -w) -gt 1 ]]
         then
             BAMList=\$(echo ${bamlist}|sort -n|awk '{for(i=1;i<=NF;i++)printf("I=%s%s", \$i,FS)}END{printf("\\n")}')
-            module load "picard/${params.picardversion}"
-            java -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus -jar \${EBROOTPICARD}/picard.jar  MergeSamFiles \${BAMList} \\
+            picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" MergeSamFiles \${BAMList} \\
                 O=${sampleid}.bam \\
                 ASSUME_SORTED=true \\
                 MERGE_SEQUENCE_DICTIONARIES=true \\
@@ -414,7 +401,6 @@ process MERGE_BAMS_BYSAMPLEID{
         samtools index -c -@ $task.cpus ${sampleid}.sorted.bam ${sampleid}.sorted.bam.csi
         if [[ "${markduplicates}" == "false" ]]
         then
-            module load "GATK/${params.gatkversion}"
             gatk --java-options "-Xms60G -Xmx60G -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus" MarkDuplicatesSpark \\
                   -I ${sampleid}.sorted.bam \\
                   -O ${sampleid}.sorted.dedup.bam  \\
@@ -425,14 +411,12 @@ process MERGE_BAMS_BYSAMPLEID{
 
         if [[ "${seqtype}" == "rna" ]];
         then
-            module load "GATK/${params.gatkversion}"
             gatk --java-options "-Xmx30g -Xms30g -XX:ParallelGCThreads=${task.cpus}" SplitNCigarReads \\
                 -R ${refgenome} \\
                 -I ${sampleid}.sorted.bam \\
                 -OBI false \\
                 -O ${sampleid}.sorted.gatk.bam
             mv ${sampleid}.sorted.gatk.bam  ${sampleid}.sorted.bam
-            module unload "GATK/${params.gatkversion}"
         fi
 
         #Perform base recalibration
