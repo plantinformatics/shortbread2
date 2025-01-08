@@ -39,10 +39,9 @@ process RUN_ALIGNMENT {
         out_samsorted="${samplename}_sorted.bam"
         logs="${logpath}/${aligner}/${sampleid}/"
         trimlog="${logpath}/${trimmethod}/"
-    System.out.println("${params.alignlabel}")
     """
     #!/bin/bash
-    set -euxo pipefail
+    #set -euxo pipefail
     samplesheetrow=\$(cat ${samplesheet}|grep -v "SampleName"|awk -v sample=${samplename} -F "," '{if(\$2==sample) print \$0}')
     echo \${samplesheetrow}
     sampleid=\$(echo \${samplesheetrow}|awk -F "," '{printf("%s",\$1)}')
@@ -295,7 +294,7 @@ process RUN_ALIGNMENT {
             | awk '{for(i=1;i<=NF;i++)printf("I=%s%s", \$i,FS)}END{printf("\\n")}')
 
             #Merge bam files to a single sample - level file
-            picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" MergeSamFiles \${BAMList} \\
+            picard MergeSamFiles \${BAMList} \\
                                     O=merged.bam \\
                                     ASSUME_SORTED=true \\
                                     MERGE_SEQUENCE_DICTIONARIES=true \\
@@ -308,7 +307,7 @@ process RUN_ALIGNMENT {
             mv  \${paired_align} merged.bam
         fi
         #Add Read group details to the the bam files
-        picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" AddOrReplaceReadGroups \\
+        picard AddOrReplaceReadGroups \\
                        I=merged.bam \\
                        O=${out_samsorted} \\
                        RGID=\${RGID} \\
@@ -358,7 +357,7 @@ process MERGE_BAMS_BYSAMPLEID{
         logs="${logpath}/Merging_and_deduplication/${sampleid}/"
     """
     #!/bin/bash
-    set -euxo pipefail
+    #set -euxo pipefail
     mkdir -p "${outputdir}"
     mkdir -p ${logs}
 
@@ -372,7 +371,7 @@ process MERGE_BAMS_BYSAMPLEID{
         if [[ \$(echo ${bamlist}|wc -w) -gt 1 ]]
         then
             BAMList=\$(echo ${bamlist}|sort -n|awk '{for(i=1;i<=NF;i++)printf("I=%s%s", \$i,FS)}END{printf("\\n")}')
-            picard --java-options "-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}" MergeSamFiles \${BAMList} \\
+            picard MergeSamFiles \${BAMList} \\
                 O=${sampleid}.bam \\
                 ASSUME_SORTED=true \\
                 MERGE_SEQUENCE_DICTIONARIES=true \\

@@ -17,7 +17,7 @@ process RUN_FASTQC {
     multiqc="${output}/Reports/"
     """
     #!/bin/bash
-    set -euxo pipefail
+    #set -euxo pipefail
     logpath="${output}/Logs/01_FastQC/"
     mkdir -p \${logpath}
     mkdir -p "${multiqc}"
@@ -49,7 +49,7 @@ process MULTIQC()
     multiqc="${output}/Reports/"
     """
     #!/bin/bash
-    set -euxo pipefail
+    #set -euxo pipefail
     echo "Running multiqc step"
     multiqc -f --config ${multiqc_configfile} \\
             -n "Shortbread2-quality-report" \\
@@ -66,7 +66,7 @@ process GENERATE_VCFSTATS {
     script:
     """
     #!/bin/bash
-    set -euxo pipefail
+    #set -euxo pipefail
     hets=\$(bcftools view -H -i 'GT="0/1"' ${vcf}|wc -l)
     homs=\$(bcftools view -H -e 'GT="0/1"' ${vcf}|wc -l)
     multialleles=\$(bcftools view -m2 -v snps ${vcf}|wc -l)

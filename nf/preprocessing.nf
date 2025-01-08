@@ -99,8 +99,8 @@ process PREPARE_INTERVALS{
             excludecontigs="yes"
         fi
         #Build interval list based on the dictionary from the reference genome
-        #intervallist=\$(awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");skip=exclude=="true"&&len[2]<intsize;if(!skip){for(i=1;i<=len[2];i+=intsize){j=i+intsize-1; if(j>len[2]){j=len[2]}; printf("%s:%d-%d ", chr[2], i, j )}}}' ${dict})
-        intervallist=\$(grep "^@SQ" ${dict}|awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");printf("%s:%d-%d ", chr[2], 1, len[2])}')
+        intervallist=\$(awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");skip=exclude=="true"&&len[2]<intsize;if(!skip){for(i=1;i<=len[2];i+=intsize){j=i+intsize-1; if(j>len[2]){j=len[2]}; printf("%s:%d-%d ", chr[2], i, j )}}}' ${dict})
+        #intervallist=\$(grep "^@SQ" ${dict}|awk -v intsize=${intervalsize} -v exclude="\${excludecontigs}" -v chrexc=\$(echo ${chromtoexclude}|sed -e "s/\\*//g") '{split(\$2,chr,":"); if(exclude=="yes" && substr(chr[2],1,length(chrexc))==chrexc){next};if(chr[2]==chrexc){next};split(\$3,len,":");printf("%s:%d-%d ", chr[2], 1, len[2])}')
         if [[ -z "\${intervallist}" ]];
         then
             echo "\${intervallist}"
