@@ -129,7 +129,7 @@ To run your own analysis you will need the following;
 It's recommended to use the [*params.config*](params.config) file to add all the parameters and then run shortbread as;
 
 ```bash
-nextflow run main.nf -profile slurm -resume --paramfile [*params.config*](params.config)
+nextflow run main.nf -profile slurm -resume --paramfile params.config
 ```
 Alternatively, you can save the [*params.config*](params.config) file with a different name e.g 'IPK-wheat-params.config' and use this with Nextflow as follows;
 
