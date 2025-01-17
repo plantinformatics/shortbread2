@@ -30,7 +30,6 @@ process GATHER_VCF {
     index=indextype[0]
     """
     #!/bin/bash
-    set -euxo pipefail
     echo "Gathering files belonging to chromosome ${chrom} together" !
     mkdir -p ${outdir}
     ls *.vcf.gz| split -l 100 - subset_vcfs
@@ -84,7 +83,6 @@ process FILTER_VAR {
     genotypefilt="${genotypes.toString().replace('.vcf.gz','-filtered_with-')}MAF_${MAF}-CR_${CR}-AC_${AC}.vcf.gz"
     """
     #!/bin/bash
-    set -euxo pipefail
     echo "Start filtering for ${genotypes} on ${CR}"
     bcftools index ${genotypes}
     if [[ ${samplecount} -gt 1 ]];
@@ -182,7 +180,6 @@ process GENERATE_VariantList{
     snplist="${genotypes.replaceAll('.vcf.gz','-List.vcf.gz')}"
     """
     #!/bin/bash
-    set -euxo pipefail
     echo Generating variant list for "${genotypes}.baseName"
     echo "Start generating SNP list for ${genotypes} before final step"
     bcftools view --threads ${task.cpus} -G -O z9 -o SNPlist.vcf.gz ${genotypes}
@@ -205,7 +202,6 @@ process GENERATE_VARIANTGRAPH
         output.mkdirs()
     """
     #!/bin/bash
-    set -euxo pipefail
     chromfasta="${chrom}.fasta"
     samtools faidx ${params.refgenome} ${chrom}>\${chromfasta}
     samtools faidx \${chromfasta}

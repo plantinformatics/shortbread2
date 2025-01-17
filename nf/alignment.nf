@@ -41,7 +41,7 @@ process RUN_ALIGNMENT {
         trimlog="${logpath}/${trimmethod}/"
     """
     #!/bin/bash
-    #set -euxo pipefail
+    
     samplesheetrow=\$(cat ${samplesheet}|grep -v "SampleName"|awk -v sample=${samplename} -F "," '{if(\$2==sample) print \$0}')
     echo \${samplesheetrow}
     sampleid=\$(echo \${samplesheetrow}|awk -F "," '{printf("%s",\$1)}')
@@ -357,7 +357,7 @@ process MERGE_BAMS_BYSAMPLEID{
         logs="${logpath}/Merging_and_deduplication/${sampleid}/"
     """
     #!/bin/bash
-    #set -euxo pipefail
+    
     mkdir -p "${outputdir}"
     mkdir -p ${logs}
 

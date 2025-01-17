@@ -44,7 +44,6 @@ process RUN_GATK_HAPLOTYPE_CALLER{
 
     """
     #!/bin/bash
-    set -euxo pipefail
     #create a logging directory for haplotype calls
     mkdir -p ${logpath}
 
