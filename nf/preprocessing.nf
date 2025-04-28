@@ -46,8 +46,8 @@ process GET_GENOMEINFO {
             export _JAVA_OPTIONS="-Xmx40G -Xms20G -XX:+UseParallelGC -XX:ParallelGCThreads=${task.cpus}"
             picard CreateSequenceDictionary R=${refgenome} O=\${dict}
         fi
-        max_chromsize=\$(cat \${dict}|grep -v @HD |sort -k3 -r|head -n1|awk '{print \$3}'|sed -e "s/LN://g")
-        min_chromsize=\$(cat \${dict}|grep -v @HD |sort -k3 -r|tail -n1|awk '{print \$3}'|sed -e "s/LN://g")
+        max_chromsize=\$(cat \${dict}|grep -v @HD |sort -t':' -k 2n|head -n1|awk '{print \$3}'|sed -e "s/LN://g")
+        min_chromsize=\$(cat \${dict}|grep -v @HD |sort -t':' -k 2n|tail -n1|awk '{print \$3}'|sed -e "s/LN://g")
         chromosomes=\$(cat \${dict}|grep -v @HD|awk '{print \$2}'|sed -e "s/SN://")
         genomesize=\$(cat \${dict}|grep -v @HD |sed -e "s/LN://"|awk '{sum+=\$3;} END{print sum;}')
         echo "Checking if reference VCF has been provided"
