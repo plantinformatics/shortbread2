@@ -153,7 +153,7 @@ Below is a list of some of the parameters included in [*params.config*](params.c
   ``` 
   --mode            //if mode is set to 'test', the pipeline randomly samples 2 sample IDs, leave blank to run on entire datase
   --emailaddress    //Set email address to receive run updates
-  --HPCaccount     //account to be used on HPC, change this to the account associated with the project etc
+  --clusteraccount  //account to be used on the HPC cluster, change this to the account associated with the project etc
   --notifications   //Set to false to disable emails, default is true
   --aligner         //Options include 'bwamem', 'bwamem2','bowtie2','subread' or 'star', default is 'bwamem'
   --refgenome       //Path to the fasta file for the reference genome
