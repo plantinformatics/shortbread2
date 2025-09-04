@@ -352,6 +352,38 @@ process PREPARE_GENOME{
     #!/bin/bash
     
     exec > ${logpath}/2_Prepare_genome.log 2>&1
+
+
+    # Safety cleanup: only rm -rf if ref is >1 level deeper than refgenome dir. Required for star which produces sub folders if it fails
+    # Safe clean up will run a secondary check to confirm \${ref} is in fact a sub directory of where the reference genome is set. 
+    # May be unnessary I just don't like having an recursive remove without a safety check in case of nonsense. 
+    # If functionality for indexes to be built away from reference genomes, will need to revise this approach or remove the safety net. Seems that this is only required for star  
+    safe_cleanup() {
+        local ref_path="\$1"
+        local rg_path="\$2"
+
+        # Resolve absolute directories (works even if final files don't exist)
+        local ref_dir
+        local rg_dir
+        ref_dir=\$(readlink -f "\$(dirname "\$ref_path")")
+        rg_dir=\$(readlink -f "\$(dirname "\$rg_path")")
+
+        if [[ "\$ref_dir" == "\$rg_dir" ]]; then
+            echo "[WARN] Ref prefix is in the SAME directory as the reference genome."
+            echo "[WARN] Will delete FILES only: \${ref_path}*"
+            rm -f "\${ref_path}"* || true
+        elif [[ "\$ref_dir" == "\$rg_dir"/* ]]; then
+            echo "[INFO] Ref is at least one level deeper under the reference genome directory."
+            echo "[INFO] Removing files AND directories: \${ref_path}*"
+            rm -rf "\${ref_path}"* || true
+        else
+            # Different tree altogether; be conservative
+            echo "[WARN] Ref is NOT under the reference genome directory."
+            echo "[WARN] Will delete FILES only: \${ref_path}*"
+            rm -f "\${ref_path}"* || true
+        fi
+    }
+
     #check if reference genome fasta file has been indexed
     if [ ! "\$(ls ${refgenome}.fai)" ];
     then
@@ -369,28 +401,58 @@ process PREPARE_GENOME{
         #Build index based on choice of aligner
         case "${aligner}" in
             bwamem)
-                bwa index -p \${ref} ${refgenome}
+                # Added if to check for silent fail status and if failed to then remove the reference index partial so it can be rerun, finally exit in error code allowing for retry at increase RAM
+                if ! bwa index -p \${ref} ${refgenome}; then
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    rm -f \${ref}*
+                    exit 137
+                fi
             ;;
             bwamem2)
-                bwa-mem2 index -p \${ref} ${refgenome}
+                if ! bwa-mem2 index -p \${ref} ${refgenome}; then
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    rm -f \${ref}*
+                    exit 137
+                fi
             ;;
             bowtie2)
-                bowtie2-build ${refgenome} \${ref} --threads $task.cpus --large-index
+                if ! bowtie2-build ${refgenome} \${ref} --threads $task.cpus --large-index; then
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    rm -f \${ref}*
+                    exit 137
+                fi
             ;;
             star)
-                mkdir -p \${ref}
-                STAR --runThreadN $task.cpus \\
+                if [ ! -d \${ref} ]; then
+                    mkdir -p \${ref}
+                fi
+                # Adding in a more dynamic memory limit for RAM in case genome is too large and so will increase with increasing task attempt.
+                echo "[INFO] Using --limitGenomeGenerateRAM=${task.memory.toBytes()} bytes"
+                if ! STAR --runThreadN $task.cpus \\
                 --runMode genomeGenerate \\
                 --genomeDir \${ref} \\
                 --genomeFastaFiles ${refgenome} \\
                 --sjdbGTFfile ${refannotation} \\
-                --limitGenomeGenerateRAM 38800807520
+                --limitGenomeGenerateRAM ${task.memory.toBytes()}; then 
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    # safe cleanup required because of star producing sub directories in index not just file.
+                    safe_cleanup "\${ref}" "${refgenome}"
+                    exit 137
+                fi
             ;;
             subread)
-                subread-buildindex -o \${ref} ${refgenome}
+                if ! subread-buildindex -o \${ref} ${refgenome}; then
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    rm -f \${ref}*
+                    exit 137
+                fi
             ;;
             minimap2)
-                minimap2 -t $task.cpus -d \${ref} ${refgenome}
+                if ! minimap2 -t $task.cpus -d \${ref} ${refgenome}; then
+                    echo "Indexing failed, cleaning up for retry of \${ref}*"
+                    rm -f \${ref}*
+                    exit 137
+                fi
             ;;
             *)
             echo Choose the correct aligner
@@ -400,6 +462,7 @@ process PREPARE_GENOME{
     fi
     """
 }
+
 
 process SPLIT_INTERVALS()
 {
