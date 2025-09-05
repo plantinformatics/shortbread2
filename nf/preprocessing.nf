@@ -262,6 +262,9 @@ process PREPARE_SAMPLE_SHEET {
             elif echo \$read1|grep "1.fastq";
             then
                  read2=\$(echo \${read1}|sed -e "s/1.fastq/2.fastq/g")
+            elif echo \$read1|grep "1.fq";
+            then
+                 read2=\$(echo \${read1}|sed -e "s/1.fq/2.fq/g")
             fi
 
             #Check if read2 exists
@@ -426,14 +429,15 @@ process PREPARE_GENOME{
                 if [ ! -d \${ref} ]; then
                     mkdir -p \${ref}
                 fi
+                limit_ram=${ task.memory ? task.memory.toBytes() : 68800807520 }
                 # Adding in a more dynamic memory limit for RAM in case genome is too large and so will increase with increasing task attempt.
-                echo "[INFO] Using --limitGenomeGenerateRAM=${task.memory.toBytes()} bytes"
+                echo "[INFO] Using --limitGenomeGenerateRAM=\${limit_ram} bytes"
                 if ! STAR --runThreadN $task.cpus \\
                 --runMode genomeGenerate \\
                 --genomeDir \${ref} \\
                 --genomeFastaFiles ${refgenome} \\
                 --sjdbGTFfile ${refannotation} \\
-                --limitGenomeGenerateRAM ${task.memory.toBytes()}; then 
+                --limitGenomeGenerateRAM \${limit_ram}; then 
                     echo "Indexing failed, cleaning up for retry of \${ref}*"
                     # safe cleanup required because of star producing sub directories in index not just file.
                     safe_cleanup "\${ref}" "${refgenome}"
@@ -462,7 +466,6 @@ process PREPARE_GENOME{
     fi
     """
 }
-
 
 process SPLIT_INTERVALS()
 {
