@@ -188,21 +188,24 @@ process PREPARE_SAMPLE_SHEET {
         fi
 
         #Build list of fastq1 files and sample IDs
-        fastq1s=\$(cat ${samplesheet}|awk -F ',' '{printf("%s ",\$2)}')
+        #fastq1s=\$(cat ${samplesheet}|awk -F ',' '{printf("%s ",\$2)}')
+        mapfile -t fastq1s < <(awk -F',' 'NR>1 {print \$2}' "${samplesheet}")
         sampleIds=\$(cat ${samplesheet}|cut -d"," -f1)
 
-        while read -r line;
-        do
-        {
-            ID=\$(echo \$line|cut -d"," -f1)
-            read1=\$(echo \$line|cut -d"," -f2)
-            read1_md5=\$(echo -n \${read1}|md5sum|cut -d" " -f1)
-            if [[ -e "\${read1}" ]];
-            then
-                echo "\${ID},\${read1},\${read1_md5}" >> samplesheet.tmp
-            fi
-        }
-        done< ${samplesheet}
+    while IFS= read -r line || [[ -n "\$line" ]]; do
+    {
+      # strip possible Windows \r
+      line=\${line%\$'\r'}
+
+      # parse CSV columns without spawning cut
+      IFS=',' read -r ID read1 _ <<< "\$line"
+
+      read1_md5=\$(printf '%s' "\$read1" | md5sum | awk '{print \$1}')
+      if [[ -e "\$read1" ]]; then
+        printf '%s,%s,%s\n' "\$ID" "\$read1" "\$read1_md5" >> samplesheet.tmp
+      fi
+    }
+    done < ${samplesheet}
     fi
     sampleIds=\$(echo \$sampleIds|awk '{for (i=1;i<=NF;i++) if (!a[\$i]++) printf("%s%s",\$i,FS)}{printf("\\n")}')
 
@@ -246,7 +249,7 @@ process PREPARE_SAMPLE_SHEET {
         echo "SampleID,SampleName,FCID,Lane,SampleIndex,RGID,RGLB,RGPL,RGPU,RGSM,Read1,Read2,SEQType">${outsheet}
         #RGID; RGLB; RGPL;RGPU; RGSM
 
-        for read1 in \${fastq1s};  #Loop through each read1 fastq file and read FCID, lane, and sample index
+        for read1 in \${fastq1s[@]};  #Loop through each read1 fastq file and read FCID, lane, and sample index
         do
         {
             if [[ ! -f "\${read1}" ]]
