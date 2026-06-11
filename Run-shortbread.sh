@@ -1,5 +1,13 @@
 #!/bin/bash
-module load Nextflow
+
+
+
+module purge
+module load Nextflow/24.10.2
+module load Miniconda3
+module load git
+
+
 nextflow run /group/grains/git/shortbread2/main.nf -profile 'slurm' -resume -bg \
   --mode 'prod' \
   --aligner 'bwamem2' \

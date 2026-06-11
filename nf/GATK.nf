@@ -324,7 +324,7 @@ process RUN_GENOTYPEGVCFs {
     rsync -rvP genotype.log ${logpath}/${intervalname}.log
     """
 }
-
+ //This isn't in the pipeline for some reason? 
 process RUN_VariantRecalibrator
 {
     input:

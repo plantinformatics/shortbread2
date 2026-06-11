@@ -14,6 +14,11 @@
  */
 nextflow.enable.dsl = 2
 
+
+// ---- Branch selection: convert "TRUE"/"FALSE" to boolean ----
+params.RunMPILEUP = (params.RunMPILEUP ?: 'FALSE')
+def RUN_MPILEUP = ['TRUE','T','YES','Y','1'].contains(params.RunMPILEUP.toString().trim().toUpperCase())
+
 log.info """\
 
 G'Day ${params.user}
@@ -40,6 +45,13 @@ include {
   RUN_ALIGNMENT;
   MERGE_BAMS_BYSAMPLEID;
 } from './nf/alignment.nf'
+
+include {
+  RUN_GENOTYPE_MPILEUP;
+  RUN_MERGE_MPILEUP;
+  GATHER_VCF_MPILEUP as GATHER_RAW_VCFs_mpileup;
+  GATHER_VCF_MPILEUP as GATHER_FILTERED_VCFs_mpileup;
+} from './nf/mpileup.nf'
 
 include {
   READ_GATKDBs;
@@ -233,92 +245,155 @@ workflow {
             }
        }
 
+
+
         //Check whether to skip all GATK steps
        if(!params.gatk)
         {
-            //Check whether to skip haplotype and database step
-            if(!params.skipalignhapdb)
+            if(!RUN_MPILEUP)
             {
-                // Step3 - GATK processing steps
-                RUN_GATK_HAPLOTYPE_CALLER(
+                //Check whether to skip haplotype and database step
+                if(!params.skipalignhapdb)
+                {
+                    // Step3 - GATK processing steps
+                    RUN_GATK_HAPLOTYPE_CALLER(
+                        intervallist,
+                        params.refgenome,
+                        params.GATKHaplotypeoptions,
+                        maxchromsize,
+                        gatkreferencevcf
+                        )
+                    subintervals.combine(RUN_GATK_HAPLOTYPE_CALLER.out
+                    .groupTuple(by:0,size:params.numberofsamples),by:0)
+                    .map{it->tuple(it.get(1),it.get(2),it.get(3),it.get(4)[0])}
+                    .set{gvcfs}
+                }
+                if(params.GATKupdateexistingdb)
+                {
+                    UPDATE_GENOMICSDB(
+                        gvcfs,
+                        params.GATKDBImportoptions,
+                        params.GATKupdateexistingdb,
+                        params.GATKpathtodbs
+                    )
+                    UPDATE_GENOMICSDB.out.set{dbimport}
+                }
+                else if(params.skipalignhapdb) 
+                {
+                    gatkdbs=Channel.fromPath(params.GATKpathtodbs+"/*/callset.json")
+                    READ_GATKDBs(gatkdbs)
+                    subintervals.combine(READ_GATKDBs.out,by:0)
+                    .map{it->
+                        tuple(it[2],it[1],it[3],it[4])}
+                    .set{dbimport}
+                }
+                else
+                {
+                    BUILD_GENOMICSDBImport(
+                    gvcfs,
+                    params.GATKDBImportoptions
+                    )
+                    BUILD_GENOMICSDBImport.out.set{dbimport}
+                }
+                    
+                RUN_GENOTYPEGVCFs(
+                    dbimport,
+                    params.GATKGenotypingoptions,
+                    params.refgenome,
+                    gatkreferencevcf
+                )
+
+                //Group intervals by Chromosome in readiness for the gather step
+                RUN_GENOTYPEGVCFs.out.groupTuple()
+                .set{genotypes}
+                FILTER_VAR(
+                    params.CRbcf,
+                    params.MAFbcf,
+                    params.ACbcf,
+                    params.MQbcf,
+                    params.otherfilters,
+                    RUN_GENOTYPEGVCFs.out,
+                    params.numberofsamples,
+                    params.keepmultiallelicbcf,
+                    gatkreferencevcf,
+                    params.keepindelsbcf)
+                GATHER_RAW_VCFs(
+                    genotypes,
+                    params.refgenome,
+                    "raw"
+                )
+                GENERATE_RAW_VARLIST(GATHER_RAW_VCFs.out.map{it->it[1]})
+
+                FILTER_VAR.out.groupTuple().set{filteredgenotypes}
+                GATHER_FILTERED_VCFs(
+                    filteredgenotypes,
+                    params.refgenome,
+                    "filtered"
+                )
+                GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs.out.map{it->it[1]})
+                GATHER_RAW_VCFs.out.collect()
+                .combine(GATHER_FILTERED_VCFs.out.collect())
+                .set{multiqcwait}
+            }
+        //End of GATK bits and bobs
+            if(RUN_MPILEUP)
+            {
+                RUN_GENOTYPE_MPILEUP(
                     intervallist,
                     params.refgenome,
                     params.GATKHaplotypeoptions,
                     maxchromsize,
                     gatkreferencevcf
-                    )
-                subintervals.combine(RUN_GATK_HAPLOTYPE_CALLER.out
-                .groupTuple(by:0,size:params.numberofsamples),by:0)
-                .map{it->tuple(it.get(1),it.get(2),it.get(3),it.get(4)[0])}
-                .set{gvcfs}
-            }
-            if(params.GATKupdateexistingdb)
-            {
-                UPDATE_GENOMICSDB(
-                    gvcfs,
-                    params.GATKDBImportoptions,
-                    params.GATKupdateexistingdb,
-                    params.GATKpathtodbs
                 )
-                UPDATE_GENOMICSDB.out.set{dbimport}
-            }
-            else if(params.skipalignhapdb) 
-            {
-                gatkdbs=Channel.fromPath(params.GATKpathtodbs+"/*/callset.json")
-                READ_GATKDBs(gatkdbs)
-                subintervals.combine(READ_GATKDBs.out,by:0)
-                .map{it->
-                    tuple(it[2],it[1],it[3],it[4])}
-                .set{dbimport}
-            }
-            else
-            {
-                BUILD_GENOMICSDBImport(
-                gvcfs,
-                params.GATKDBImportoptions
+
+
+                RUN_GENOTYPE_MPILEUP.out
+                  .groupTuple(by: 0, size: params.numberofsamples)
+                  .map { interval, chroms, files, fileindex, indexes ->
+                      tuple(interval, chroms[0], files, fileindex, indexes[0])
+                  }
+                  .set { gvcfs }
+
+
+                RUN_MERGE_MPILEUP(
+                    gvcfs
                 )
-                BUILD_GENOMICSDBImport.out.set{dbimport}
+
+                RUN_MERGE_MPILEUP.out.groupTuple()
+                .set{genotypes}
+                FILTER_VAR(
+                    params.CRbcf,
+                    params.MAFbcf,
+                    params.ACbcf,
+                    params.MQbcf,
+                    params.otherfilters,
+                    RUN_MERGE_MPILEUP.out,
+                    params.numberofsamples,
+                    params.keepmultiallelicbcf,
+                    gatkreferencevcf,
+                    params.keepindelsbcf)
+                GATHER_RAW_VCFs_mpileup(
+                    genotypes,
+                    params.refgenome,
+                    "raw"
+                )
+                GENERATE_RAW_VARLIST(GATHER_RAW_VCFs_mpileup.out.map{it->it[1]})
+
+                FILTER_VAR.out.groupTuple().set{filteredgenotypes}
+                GATHER_FILTERED_VCFs_mpileup(
+                    filteredgenotypes,
+                    params.refgenome,
+                    "filtered"
+                )
+                GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs_mpileup.out.map{it->it[1]})
+                GATHER_RAW_VCFs_mpileup.out.collect()
+                .combine(GATHER_FILTERED_VCFs_mpileup.out.collect())
+                .set{multiqcwait}
+
+
             }
-                   
-            RUN_GENOTYPEGVCFs(
-                dbimport,
-                params.GATKGenotypingoptions,
-                params.refgenome,
-                gatkreferencevcf
-            )
-
-            //Group intervals by Chromosome in readiness for the gather step
-            RUN_GENOTYPEGVCFs.out.groupTuple()
-            .set{genotypes}
-            FILTER_VAR(
-                params.CRbcf,
-                params.MAFbcf,
-                params.ACbcf,
-                params.MQbcf,
-                params.otherfilters,
-                RUN_GENOTYPEGVCFs.out,
-                params.numberofsamples,
-                params.keepmultiallelicbcf,
-                gatkreferencevcf,
-                params.keepindelsbcf)
-            GATHER_RAW_VCFs(
-                genotypes,
-                params.refgenome,
-                "raw"
-            )
-            GENERATE_RAW_VARLIST(GATHER_RAW_VCFs.out.map{it->it[1]})
-
-            FILTER_VAR.out.groupTuple().set{filteredgenotypes}
-            GATHER_FILTERED_VCFs(
-                filteredgenotypes,
-                params.refgenome,
-                "filtered"
-            )
-            GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs.out.map{it->it[1]})
-            GATHER_RAW_VCFs.out.collect()
-            .combine(GATHER_FILTERED_VCFs.out.collect())
-            .set{multiqcwait}
         }
+
         else{
             bamqcwait.collect().set{multiqcwait}
         }
