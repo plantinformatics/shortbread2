@@ -88,6 +88,7 @@ process RUN_MERGE_MPILEUP {
     label 'BCFTOOLS'
     input:
         tuple val(intervals), val(chrom), path(gvcfs),path(gvcfsidx), val(index)
+        val sample_order
     output:
         tuple val("${chrom}"), val("${outfile}"),val("${index}")
     script:
@@ -117,6 +118,12 @@ process RUN_MERGE_MPILEUP {
     | bcftools annotate --threads ${task.cpus} --set-id '%CHROM\\_%POS\\_%REF\\_%FIRST_ALT' -Ou \\
     | bcftools sort -Oz -o "${outfile}"
 
+    # In case sample order differs between chrom chunks we standardise now bsed on sample sheet
+    printf "%s\n" ${sample_order.join(' ')} > desired_samples.txt
+    bcftools query -l "${outfile}" > current_samples.txt
+    grep -F -x -f current_samples.txt desired_samples.txt > reorder_samples.txt
+    bcftools view --threads ${task.cpus} -S reorder_samples.txt -Oz -o "${outfile}.reordered.vcf.gz" "${outfile}"
+    mv "${outfile}.reordered.vcf.gz" "${outfile}"
     touch "${outfile}"
 
     bcftools index -f "${outfile}"

@@ -20,12 +20,26 @@ process RUN_FASTQC {
     logpath="${output}/Logs/01_FastQC/"
     mkdir -p \${logpath}
     mkdir -p "${multiqc}"
-    #Split reads into groups of 100
-    cat ${samplesheet}|grep -vi 'Read1'|awk -F "," '{printf("%s\\n%s\\n",\$(NF-2),\$(NF-1))}'|split -l 100 - subset_reads
-    for ss in subset_reads*;
+    # Build a robust list of FASTQ files from the normalized samplesheet.
+    # Read1 and Read2 remain the last two read-path columns in the revised sheet:
+    # SampleID,RunID,SampleName,FCID,Lane,SampleIndex,RGID,RGLB,RGPL,RGPU,RGSM,Read1,Read2,SEQType
+    tail -n +2 ${samplesheet} \\
+    | awk -F "," '{print \$(NF-2); if(\$(NF-1)!="") print \$(NF-1)}' \\
+    | awk 'NF>0' > fastqc_reads.list
+
+    if [[ ! -s fastqc_reads.list ]]; then
+        echo "No FASTQ files found in normalized samplesheet for FastQC"
+        exit 0
+    fi
+
+    # Split reads into groups of 100 to avoid overly long command lines
+    split -l 100 fastqc_reads.list subset_reads_
+
+    for ss in subset_reads_*;
     do
     {
-        fastqc --outdir "\${logpath}" --threads $task.cpus \$(cat \${ss}|awk '{printf("%s ",\$0)}')
+        [[ ! -s "\${ss}" ]] && continue
+        fastqc --outdir "\${logpath}" --threads $task.cpus \$(awk '{printf("%s ",\$0)}' "\${ss}")
     }
     done
     """

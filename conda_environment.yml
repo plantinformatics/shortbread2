@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - fastqc=0.12.1
-  - multiqc=1.14
+  - multiqc=1.35
   - gatk4=4.5.0.0
   - picard=3.0.0
   - samtools=1.17

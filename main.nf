@@ -95,15 +95,25 @@ workflow {
             )
         
         PREPARE_SAMPLE_SHEET.out.splitCsv(header: true).map{
-                row ->row.SampleID
+                row -> row.SampleID
                 }.unique().set{ samples }
 
         PREPARE_SAMPLE_SHEET.out.splitCsv(header: true)
         .map{ row ->
-            tuple(row.SampleID,row.SampleName,row.Read1,row.Read2,row.SEQType)
-        }.groupTuple().map{
-                ID, samples,Read1,Read2,SEQType -> tuple( groupKey(ID, samples.size()), samples)
-        }.transpose().set{ alignments }
+            tuple(
+                row.SampleID,
+                row.RunID,
+                row.SampleName,
+                row.Read1,
+                row.Read2,
+                row.SEQType,
+                row.RGID,
+                row.RGLB,
+                row.RGPL,
+                row.RGPU,
+                row.RGSM
+            )
+        }.set{ alignments }
         if(!params.fastqc||params.runfastqconly){
             //Check sequencing quality
             RUN_FASTQC(
@@ -180,7 +190,6 @@ workflow {
                 RUN_ALIGNMENT(
                     alignments,
                     params.trimmethod,
-                    PREPARE_SAMPLE_SHEET.out,
                     params.runpath,
                     params.trimmeroptions,
                     params.OFFSET,
@@ -193,7 +202,10 @@ workflow {
                  )
                 RUN_ALIGNMENT.out
                 .groupTuple()
-                .map{it->tuple(it.get(0),it.get(1).unique(),it.get(2)[0])}
+                .map{ sampleid, bamlist, mergeflags ->
+                    def mergeDecision = mergeflags.collect{ it.toString() }.contains('yes') ? 'yes' : 'no'
+                    tuple(sampleid, bamlist.unique(), mergeDecision)
+                }
                 .set{mergealignments}
 
                 // Call haplotypes for each sample and then build GATK db
@@ -356,7 +368,8 @@ workflow {
 
 
                 RUN_MERGE_MPILEUP(
-                    gvcfs
+                    gvcfs,
+                    samples.collect()
                 )
 
                 RUN_MERGE_MPILEUP.out.groupTuple()
