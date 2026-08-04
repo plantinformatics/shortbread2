@@ -21,6 +21,7 @@ process GATHER_VCF {
         tuple val(chrom),path(vcfs),val(indextype)
         val refgenome
         val type
+        path addedmetadata
     output:
         tuple val("${index}"),val("${genotypes}"),val("${chrom}"),val("${type}")
     script:
@@ -56,6 +57,107 @@ process GATHER_VCF {
     #Plot missing genotypes
 
     #cat .command.log >> "${mainlogpath}/GATHER_VCF.log"
+
+    bcftools view --header-only ${genotypes} > fileheaderinfo.txt
+    
+    gawk '
+    FNR == NR {
+
+        # Store assembly line
+        if (\$0 ~ /^##assembly=/) {
+            assembly = \$0
+        }
+
+        # Store genome_url line
+        if (\$0 ~ /^##genome_url/) {
+            genome_url = \$0
+        }
+
+        # Start capturing metadata chunk
+        if (\$0 ~ /##Shortbread2_analysis_start_date:/) {
+            in_chunk = 1
+        }
+
+        # Store chunk lines, including start and end lines
+        if (in_chunk) {
+            chunk[++chunk_n] = \$0
+        }
+
+        # Stop capturing after Variant_call_method line
+        if (\$0 ~ /##Shortbread2_variant_call_method:/) {
+            in_chunk = 0
+        }
+
+        # Store contig-specific extra metadata from file2
+        if (match(\$0, /^##contig=<ID=([^,>]+)/, m)) {
+            id = m[1]
+
+            if (match(\$0, /,species.*>/)) {
+                contig_extra[id] = substr(\$0, RSTART, RLENGTH)
+            }
+        }
+
+        next
+    }
+
+
+    # Insert metadata chunk below ##fileformat= as key word find
+    /^##fileformat=/ {
+        print
+
+        for (i = 1; i <= chunk_n; i++) {
+            print chunk[i]
+        }
+
+        next
+    }
+
+    # Insert assembly and genome_url below ##reference= as key word find
+    /^##reference=/ {
+        print
+
+        if (assembly != "") {
+            print assembly
+        }
+
+        if (genome_url != "") {
+            print genome_url
+        }
+
+        next
+    }
+
+    # Update matching contig lines while preserving the length already reported so it remains the correct length in case of edge cases
+    /^##contig=<ID=/ {
+
+        if (match(\$0, /^##contig=<ID=([^,>]+)/, m)) {
+            id = m[1]
+
+            if (id in contig_extra) {
+                line = \$0
+
+                # Remove closing > from file1 contig line before appending metadata
+                sub(/>\$/, "", line)
+
+                print line contig_extra[id]
+                next
+            }
+        }
+    }
+
+    {
+        print
+    }
+    ' ${addedmetadata} fileheaderinfo.txt > updated_header.txt
+
+
+
+    bcftools reheader -h updated_header.txt -o ${genotypes}.TMP ${genotypes} && mv "${genotypes}.TMP" "${genotypes}"
+
+
+    [[ "${index}" == "true" ]] && bcftools index -t "${genotypes}" || bcftools index -c "${genotypes}"
+
+
     """
 }
 

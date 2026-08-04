@@ -88,7 +88,6 @@ process RUN_GATK_HAPLOTYPE_CALLER{
                    -L "\${intervalvcf}" \\
                    --sample-name "${sampleid}" \\
                    -OVI \${index} \\
-                   --pair-hmm-implementation "AVX_LOGLESS_CACHING_OMP" \\
                    --native-pair-hmm-threads ${task.cpus} ${bamsout} \\
                    -ERC GVCF ${otheroptions} --alleles  \${allelevcf}
 

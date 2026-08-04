@@ -15,7 +15,7 @@
 nextflow.enable.dsl = 2
 
 
-// ---- Branch selection: convert "TRUE"/"FALSE" to boolean ----
+// - Branch selection: convert "TRUE"/"FALSE" to boolean 
 params.RunMPILEUP = (params.RunMPILEUP ?: 'FALSE')
 def RUN_MPILEUP = ['TRUE','T','YES','Y','1'].contains(params.RunMPILEUP.toString().trim().toUpperCase())
 
@@ -39,6 +39,8 @@ include {
   GET_GENOMEINFO;
   PREPARE_INTERVALS;
   SPLIT_INTERVALS;
+  GENOME_METADATA;
+  VCF_METADATA;
 } from './nf/preprocessing.nf'
 
 include {
@@ -81,6 +83,109 @@ include {
  */
 println("Starting shortbread2 workflow")
 
+// Git commit version, git url, added branch name, plus cast paramaters information for future incorporation into final vcfs
+// Utilises First, Nextflow parameters and secondary failsafe using .git config file
+// Note: I've tested this part and it seems robust but it's mostly ChatGPT, I'm not familiar enough with Nextflow and nextflow standard parameters to break down every component of it (JO)
+
+def shortShaFromGit = { File projDir ->
+    try {
+        def head = new File(projDir, '.git/HEAD')
+        if (!head.exists()) return null
+        def txt = head.text.trim()
+        if (txt.startsWith('ref:')) {
+            def refPath = txt.split(':',2)[1].trim()
+            def refFile = new File(projDir, ".git/${refPath}")
+            return refFile.exists() ? refFile.text.trim().take(7) : null
+        } else {
+            return txt.take(7)
+        }
+    } catch (ignored) { null }
+}
+
+def headBranchFromGit = { File projDir ->
+    try {
+        def head = new File(projDir, '.git/HEAD')
+        if (!head.exists()) return null
+        def txt = head.text.trim()
+        if (!txt.startsWith('ref:')) return null
+        def refPath = txt.split(':',2)[1].trim()
+        return refPath.tokenize('/').last()
+    } catch (ignored) { null }
+}
+
+def readGitConfig = { File projDir ->
+    def url = null
+    def branches = []
+    try {
+        def cfg = new File(projDir, '.git/config')
+        if (!cfg.exists()) return [url: null, branches: []]
+        def curSection = ''
+        cfg.eachLine { line ->
+            def ln = line.trim()
+            if (!ln) return
+            def mSec = (ln =~ /^\[(.+?)\]\s*$/)
+            if (mSec.matches()) {
+                curSection = mSec[0][1]
+                return
+            }
+            if (curSection.toLowerCase().startsWith('remote "origin"')) {
+                def mUrl = (ln =~ /^url\s*=\s*(.+)$/)
+                if (mUrl.matches()) url = mUrl[0][1].trim()
+            }
+            if (curSection.toLowerCase().startsWith('branch "')) {
+                def mBr = (curSection =~ /^branch\s+"(.+)"$/)
+                if (mBr.matches()) branches << mBr[0][1]
+            }
+        }
+    } catch (ignored) { /* noop */ }
+    [url: url, branches: branches]
+}
+
+// SAFE normalizer (no regex backrefs)
+def normalizeRepoUrl = { String s ->
+    if (!s) return ''
+    String t = s.toString()
+    if (t.startsWith('git@') && t.contains(':')) {
+        int colon = t.indexOf(':')
+        String host = t.substring('git@'.length(), colon)
+        String path = t.substring(colon + 1)
+        t = "https://${host}/${path}"
+    } else if (t.startsWith('ssh://git@')) {
+        String rest = t.substring('ssh://git@'.length())
+        int slash = rest.indexOf('/')
+        if (slash > 0) {
+            String host = rest.substring(0, slash)
+            String path = rest.substring(slash + 1)
+            t = "https://${host}/${path}"
+        }
+    }
+    if (t.endsWith('.git')) t = t.substring(0, t.length() - 4)
+    return t
+}
+
+final File   _projDir   = new File( (workflow.projectDir ?: '.').toString() )
+final String _repoRaw   = (workflow.repository ?: '').toString()
+final String _commitSha = (workflow.commitId ?: shortShaFromGit(_projDir) ?: '').toString()
+final String _revision  = (workflow.revision ?: '').toString()
+
+final def    _cfg       = readGitConfig(_projDir)
+final String _cfgUrl    = (_cfg.url ?: '')
+final String _cfgBranch = headBranchFromGit(_projDir) ?: (_cfg.branches ? _cfg.branches[0] : '')
+
+final String shortbread_repo_url = normalizeRepoUrl( _repoRaw ?: _cfgUrl )
+final String shortbread_branch   = (_revision ?: _cfgBranch ?: '')
+
+final String shortbread_version = _commitSha
+    ? (shortbread_branch ? "${shortbread_branch}@${_commitSha.take(7)}" : "local@${_commitSha.take(7)}")
+    : 'unknown@unknown'
+
+log.info "[shortbread2] version: ${shortbread_version}"
+log.info "[shortbread2] repo:    ${shortbread_repo_url ?: '(none)'}"
+log.info "[shortbread2] branch:  ${shortbread_branch ?: '(none)'}"
+
+
+
+
 workflow {
     // Step1 - Prepare data files
     if(!params.skipalignhapdb)
@@ -122,6 +227,30 @@ workflow {
             )
         }
     }
+
+
+
+    GENOME_METADATA(
+        params.accession
+    )
+
+
+
+    def variantcallmethod = RUN_MPILEUP ? "MPILEUP" : "GATK"
+
+
+    VCF_METADATA(
+        GENOME_METADATA.out,
+        params.trimmethod,
+        params.aligner,
+        shortbread_version,
+        variantcallmethod,
+        workflow.start,
+        (shortbread_repo_url   ?: ''),   
+        (shortbread_branch ?: '')    
+    )
+
+
 
     //Check whether to run fastqc only
     if(!params.runfastqconly)
@@ -332,7 +461,8 @@ workflow {
                 GATHER_RAW_VCFs(
                     genotypes,
                     params.refgenome,
-                    "raw"
+                    "raw",
+                    VCF_METADATA.out
                 )
                 GENERATE_RAW_VARLIST(GATHER_RAW_VCFs.out.map{it->it[1]})
 
@@ -340,7 +470,8 @@ workflow {
                 GATHER_FILTERED_VCFs(
                     filteredgenotypes,
                     params.refgenome,
-                    "filtered"
+                    "filtered",
+                    VCF_METADATA.out
                 )
                 GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs.out.map{it->it[1]})
                 GATHER_RAW_VCFs.out.collect()
@@ -388,7 +519,8 @@ workflow {
                 GATHER_RAW_VCFs_mpileup(
                     genotypes,
                     params.refgenome,
-                    "raw"
+                    "raw",
+                    VCF_METADATA.out
                 )
                 GENERATE_RAW_VARLIST(GATHER_RAW_VCFs_mpileup.out.map{it->it[1]})
 
@@ -396,7 +528,8 @@ workflow {
                 GATHER_FILTERED_VCFs_mpileup(
                     filteredgenotypes,
                     params.refgenome,
-                    "filtered"
+                    "filtered",
+                    VCF_METADATA.out
                 )
                 GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs_mpileup.out.map{it->it[1]})
                 GATHER_RAW_VCFs_mpileup.out.collect()

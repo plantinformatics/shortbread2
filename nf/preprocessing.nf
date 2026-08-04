@@ -521,4 +521,52 @@ process SPLIT_INTERVALS()
     """
 }
 
+process GENOME_METADATA {
+    label 'R'
+    label 'varstore'
+    executor 'local'
+    input:
+        val Accession
+    output:
+        path outputfile
+    script:
+    outputfile="NCBI_genomemetadata.txt"
+    """
+    Rscript ${projectDir}/Scripts/Generate_NCBI_metadata.R \
+        --Accession "${Accession}" \
+        --outputfile "${outputfile}"
+    """
+}
+
+process VCF_METADATA {
+    label 'varstore'
+    executor 'local'
+    input:
+        val NCBI_meta
+        val trimmethod
+        val aligner
+        val shortbread_version
+        val variantcallmethod
+        val starttime
+        val shortbread_repo_url
+        val shortbread_branch 
+    output:
+        path outputfile
+    script:
+    combined_runmeta="runmetadata.txt"
+    outputfile="NCBI_genomemetadata_with_rundata.txt"
+    """
+    cat > ${combined_runmeta} <<EOF
+    ##Shortbread2_analysis_start_date:${starttime}
+    ##Shortbread2_version:${shortbread_version}
+    ##Shortbread2_repo:${shortbread_repo_url}
+    ##Shortbread2_branch:${shortbread_branch}
+    ##Shortbread2_read_trimming_method:${trimmethod}
+    ##Shortbread2_read_aligner_method:${aligner}
+    ##Shortbread2_variant_call_method:${variantcallmethod}
+    EOF
+
+    cat ${NCBI_meta} ${combined_runmeta} > ${outputfile}
+    """
+}
 
