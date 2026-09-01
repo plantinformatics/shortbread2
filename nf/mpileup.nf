@@ -73,6 +73,30 @@ process RUN_GENOTYPE_MPILEUP {
         --gvcf \${GVCF_BANDS} -m -Ou \\
     | bcftools sort -Oz -o ${outputfile}
 
+    pipeline_status=( "\${PIPESTATUS[@]}" )
+    set -e
+
+    if (( pipeline_status[0] != 0 ||
+          pipeline_status[1] != 0 ||
+          pipeline_status[2] != 0 )); then
+
+        echo "ERROR: paired-end bcftools pipeline failed"
+        echo "mpileup exit status: \${pipeline_status[0]}"
+        echo "bcftools call exit status: \${pipeline_status[1]}"
+        echo "bcftools sort exit status: \${pipeline_status[2]}"
+
+        if (( pipeline_status[0] == 137 ||
+              pipeline_status[1] == 137 ||
+              pipeline_status[2] == 137 )); then
+            echo "A pipeline component was killed, treating this as a probable OOM"
+            exit 137
+        fi
+
+        exit 1
+    fi
+
+
+
     bcftools index -f ${outputfile} -o ${outputfileidx}
 
     echo "bcftools calling for ${sampleid}_${intervals} complete"
@@ -101,15 +125,82 @@ process RUN_MERGE_MPILEUP {
     #!/bin/bash
     set -euxo pipefail
     echo "Running merging on ${intervals} belonging to chromosome ${chrom}!"
-    mkdir -p \$(dirname ${outdir})
-    mkdir -p ${logpath}
-
+    mkdir -p \$(dirname "${outdir}")
+    mkdir -p "${logpath}"
 
 
     echo "Starting merge"
     exec > merge.log 2>&1
-    bcftools merge ${gvcfs} \\
-        -m none \\
+    merge_tmp_dir="merge_batches"
+    mkdir -p "\${merge_tmp_dir}"
+    trap 'rm -rf "\${merge_tmp_dir}"' EXIT
+
+    # Create one input VCF path pr file
+    echo "${gvcfs}" | tr ' ' '\n' > "\${merge_tmp_dir}/all_gvcfs.list"
+
+    num_gvcfs=\$(wc -l < "\${merge_tmp_dir}/all_gvcfs.list")
+    echo "Number of input VCFs: \${num_gvcfs}"
+
+    if [[ "\${num_gvcfs}" -eq 0 ]]; then
+        echo "No input VCFs were supplied"
+        exit 1
+    fi
+
+    if [[ "\${num_gvcfs}" -le 200 ]]; then
+        echo "Fewer than 200 vcfs, no issues with merging. Merging \${num_gvcfs} input VCFs directly"
+
+        final_merge_inputs="\${merge_tmp_dir}/all_gvcfs.list"
+
+    else
+        echo "Too many vcfs for single pass, splitting \${num_gvcfs} VCFs into batches of 200"
+
+        split \\
+            -l 200 \\
+            -d \\
+            -a 4 \\
+            "\${merge_tmp_dir}/all_gvcfs.list" \\
+            "\${merge_tmp_dir}/batch_"
+
+        intermediate_list="\${merge_tmp_dir}/intermediate_bcf.list"
+        > "\${intermediate_list}"
+
+        batch_number=0
+
+        for batch_list in "\${merge_tmp_dir}"/batch_*; do
+            batch_number=\$((batch_number + 1))
+
+            intermediate_bcf="\${merge_tmp_dir}/intermediate_\$(printf '%04d' "\${batch_number}").bcf"
+            batch_size=\$(wc -l < "\${batch_list}")
+
+            echo "Merging batch \${batch_number} containing \${batch_size} VCFs"
+
+            bcftools merge \\
+                --file-list "\${batch_list}" \\
+                --merge none \\
+                --threads ${task.cpus} \\
+                -Ob \\
+                -o "\${intermediate_bcf}"
+
+            # Intermediate BCFs need new index for merge.
+            bcftools index \\
+                --force \\
+                --threads ${task.cpus} \\
+                "\${intermediate_bcf}"
+
+            printf "%s\\n" "\${intermediate_bcf}" >> "\${intermediate_list}"
+        done
+
+        num_intermediates=\$(wc -l < "\${intermediate_list}")
+        echo "Created \${num_intermediates} intermediate BCFs"
+
+        final_merge_inputs="\${intermediate_list}"
+    fi
+
+    echo "Running final merge and variant processing"
+
+    bcftools merge \\
+        --file-list "\${final_merge_inputs}" \\
+        --merge none \\
         -Ou \\
     | bcftools +setGT -- -t q -n . -i 'FMT/DP=0' \\
     | bcftools view --threads ${task.cpus} -v snps,indels,mnps -Ou \\
@@ -130,8 +221,6 @@ process RUN_MERGE_MPILEUP {
 
     echo " BCFtools merging for ${intervals} done"
     rsync -rvP merge.log ${logpath}/${interval}.log
-
-
     """
 }
 

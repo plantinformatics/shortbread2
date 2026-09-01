@@ -40,6 +40,7 @@ process RUN_ALIGNMENT {
         trimlog="${logpath}/${trimmethod}/"
     """
     #!/bin/bash
+    #set -o pipefail
 
     merged_bam="${alignments}/${sampleid}_sorted.bam"
     mdcheckfile="${alignments}/${sampleid}_sorted.bam.md5sum"
@@ -124,6 +125,30 @@ process RUN_ALIGNMENT {
               bwa mem -M -t \${threads_align} ${refindex} "\${fast1_paired}" "\${fast2_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
+
+              pipeline_status=( "\${PIPESTATUS[@]}" )
+              set -e
+
+              if (( pipeline_status[0] != 0 ||
+                    pipeline_status[1] != 0 ||
+                    pipeline_status[2] != 0 )); then
+
+                  echo "ERROR: paired-end bwamem pipeline failed"
+                  echo "bwa-mem exit status: \${pipeline_status[0]}"
+                  echo "samtools view exit status: \${pipeline_status[1]}"
+                  echo "samtools sort exit status: \${pipeline_status[2]}"
+
+                  if (( pipeline_status[0] == 137 ||
+                        pipeline_status[1] == 137 ||
+                        pipeline_status[2] == 137 )); then
+                      echo "A pipeline component was killed, treating this as a probable OOM"
+                      exit 137
+                  fi
+
+                  exit 1
+              fi
+
+
               if [[ "${seqtype}" == "PE" ]]; then
                 bwa mem -M -t \${threads_align} ${refindex} "\${fast1_single}" \
                   | samtools view - \$threads -Su \
@@ -134,22 +159,61 @@ process RUN_ALIGNMENT {
               fi
             ;;
             bwamem2)
+              set +e
+
               bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_paired}" "\${fast2_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
-              if [[ "${seqtype}" == "PE" ]]; then
-                bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_single}" \
-                  | samtools view - \$threads -Su \
-                  | samtools sort - -o "\${R1align}" \$threads
-                bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast2_single}" \
-                  | samtools view - \$threads -Su \
-                  | samtools sort - -o "\${R2align}" \$threads
+
+              pipeline_status=( "\${PIPESTATUS[@]}" )
+              set -e
+
+              if (( pipeline_status[0] != 0 ||
+                    pipeline_status[1] != 0 ||
+                    pipeline_status[2] != 0 )); then
+
+                  echo "ERROR: paired-end bwamem2 pipeline failed"
+                  echo "bwa-mem2 exit status: \${pipeline_status[0]}"
+                  echo "samtools view exit status: \${pipeline_status[1]}"
+                  echo "samtools sort exit status: \${pipeline_status[2]}"
+
+                  if (( pipeline_status[0] == 137 ||
+                        pipeline_status[1] == 137 ||
+                        pipeline_status[2] == 137 )); then
+                      echo "A pipeline component was killed, treating this as a probable OOM"
+                      exit 137
+                  fi
+
+                  exit 1
               fi
             ;;
             bowtie2)
               bowtie2 \${threads} -x ${refindex} -1 "\${fast1_paired}" -2 "\${fast2_paired}" "${aligneroptions}" \
                 | samtools view - \${threads} -Su \
                 | samtools sort - -o "\${paired_align}" \${threads} -O BAM
+
+              pipeline_status=( "\${PIPESTATUS[@]}" )
+              set -e
+
+              if (( pipeline_status[0] != 0 ||
+                    pipeline_status[1] != 0 ||
+                    pipeline_status[2] != 0 )); then
+
+                  echo "ERROR: paired-end bowtie2 pipeline failed"
+                  echo "bowtie2 exit status: \${pipeline_status[0]}"
+                  echo "samtools view exit status: \${pipeline_status[1]}"
+                  echo "samtools sort exit status: \${pipeline_status[2]}"
+
+                  if (( pipeline_status[0] == 137 ||
+                        pipeline_status[1] == 137 ||
+                        pipeline_status[2] == 137 )); then
+                      echo "A pipeline component was killed, treating this as a probable OOM"
+                      exit 137
+                  fi
+
+                  exit 1
+              fi
+
               if [[ "${seqtype}" == "PE" ]]; then
                 bowtie2 -x "${refindex}" -U "\${fast1_single}" \$threads "${aligneroptions}" \
                   | samtools view - \$threads -Su \
@@ -216,6 +280,29 @@ process RUN_ALIGNMENT {
               minimap2 -t $task.cpus -ax sr ${refindex} "\${fast1_paired}" "\${fast2_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
+
+              pipeline_status=( "\${PIPESTATUS[@]}" )
+              set -e
+
+              if (( pipeline_status[0] != 0 ||
+                    pipeline_status[1] != 0 ||
+                    pipeline_status[2] != 0 )); then
+
+                  echo "ERROR: paired-end minimap2 pipeline failed"
+                  echo "minimap2 exit status: \${pipeline_status[0]}"
+                  echo "samtools view exit status: \${pipeline_status[1]}"
+                  echo "samtools sort exit status: \${pipeline_status[2]}"
+
+                  if (( pipeline_status[0] == 137 ||
+                        pipeline_status[1] == 137 ||
+                        pipeline_status[2] == 137 )); then
+                      echo "A pipeline component was killed, treating this as a probable OOM"
+                      exit 137
+                  fi
+
+                  exit 1
+              fi
+
               if [[ "${seqtype}" == "PE" ]]; then
                 minimap2 -t $task.cpus -ax sr ${refindex} "\${fast1_single}" \
                   | samtools view - \$threads -Su \
@@ -392,3 +479,4 @@ process MERGE_BAMS_BYSAMPLEID{
     fi
     """
 }
+
