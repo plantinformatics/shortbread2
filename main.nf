@@ -50,7 +50,6 @@ include {
 
 include {
   RUN_GENOTYPE_MPILEUP;
-  RUN_MERGE_MPILEUP;
   GATHER_VCF_MPILEUP as GATHER_RAW_VCFs_mpileup;
   GATHER_VCF_MPILEUP as GATHER_FILTERED_VCFs_mpileup;
 } from './nf/mpileup.nf'
@@ -187,6 +186,11 @@ log.info "[shortbread2] branch:  ${shortbread_branch ?: '(none)'}"
 
 
 workflow {
+    // Workflow-scoped channel assigned by whichever BAM input branch is active.
+    
+    def jointMpileupBams
+    def jointMpileupIndexes
+
     // Step1 - Prepare data files
     if(!params.skipalignhapdb)
     {  
@@ -350,6 +354,20 @@ workflow {
                     maxchromsize
                 )
                 bamqcwait=MERGE_BAMS_BYSAMPLEID.out
+
+                // Collect all merged BAMs and their existing indexes for joint mpileup.
+                jointMpileupBams = MERGE_BAMS_BYSAMPLEID.out
+                    .map { sampleid, bam, bamIndex ->
+                        bam
+                    }
+                    .collect()
+
+                jointMpileupIndexes = MERGE_BAMS_BYSAMPLEID.out
+                    .map { sampleid, bam, bamIndex ->
+                        bamIndex
+                    }
+                    .collect()
+
                 if(!params.gatk)
                 {
                     //Combine intervals with merged bam files
@@ -382,6 +400,18 @@ workflow {
                     .map{interval,sampleid,bam,bamindex->
                       tuple(groupKey(interval,sampleid.size()),sampleid,bam,bamindex)
                     }.set{intervallist}
+
+                // Collect all existing BAMs and their CSI indexes for joint mpileup.
+                // Collect all existing BAMs for joint mpileup.
+                jointMpileupBams = bamfiles
+                    .collect()
+
+                // Collect the corresponding CSI indexes.
+                jointMpileupIndexes = bamfiles
+                    .map { bam ->
+                        file("${bam}.csi", checkIfExists: true)
+                    }
+                    .collect()
                 bamqcwait=intervallist
             }
        }
@@ -481,62 +511,97 @@ workflow {
         //End of GATK bits and bobs
             if(RUN_MPILEUP)
             {
+                // Run one joint mpileup task per unique genomic interval.
+                jointMpileupIntervals = PREPARE_INTERVALS.out
+                    .map { id ->
+                        id.split(/\s+/)
+                    }
+                    .flatten()
+                    .map { interval ->
+                        interval.toString()
+                    }
+                    .filter { interval ->
+                        interval
+                    }
+                    .distinct()
+
+
                 RUN_GENOTYPE_MPILEUP(
-                    intervallist,
+                    jointMpileupIntervals,
+                    jointMpileupBams,
+                    jointMpileupIndexes,
                     params.refgenome,
                     params.GATKHaplotypeoptions,
                     maxchromsize,
                     gatkreferencevcf
                 )
 
-
+                // Convert the four-field process output to the downstream-compatible shape:
+                // chromosome, regional VCF, index-availability flag.
                 RUN_GENOTYPE_MPILEUP.out
-                  .groupTuple(by: 0, size: params.numberofsamples)
-                  .map { interval, chroms, files, fileindex, indexes ->
-                      tuple(interval, chroms[0], files, fileindex, indexes[0])
-                  }
-                  .set { gvcfs }
+                    .map { chrom, vcf, vcfIndex, indexAvailable ->
+                        tuple(
+                            chrom,
+                            vcf,
+                            indexAvailable
+                        )
+                    }
+                    .set { rawMpileupCalls }
 
-
-                RUN_MERGE_MPILEUP(
-                    gvcfs,
-                    samples.collect()
-                )
-
-                RUN_MERGE_MPILEUP.out.groupTuple()
-                .set{genotypes}
+                // Filter each regional joint-called VCF.
                 FILTER_VAR(
                     params.CRbcf,
                     params.MAFbcf,
                     params.ACbcf,
                     params.MQbcf,
                     params.otherfilters,
-                    RUN_MERGE_MPILEUP.out,
+                    rawMpileupCalls,
                     params.numberofsamples,
                     params.keepmultiallelicbcf,
                     gatkreferencevcf,
-                    params.keepindelsbcf)
+                    params.keepindelsbcf
+                )
+
+                // Group raw regional VCFs by chromosome before gathering.
+                rawMpileupCalls
+                    .groupTuple()
+                    .set { rawMpileupCallsByChrom }
+
                 GATHER_RAW_VCFs_mpileup(
-                    genotypes,
+                    rawMpileupCallsByChrom,
                     params.refgenome,
                     "raw",
                     VCF_METADATA.out
                 )
-                GENERATE_RAW_VARLIST(GATHER_RAW_VCFs_mpileup.out.map{it->it[1]})
 
-                FILTER_VAR.out.groupTuple().set{filteredgenotypes}
+                GENERATE_RAW_VARLIST(
+                    GATHER_RAW_VCFs_mpileup.out.map { item ->
+                        item[1]
+                    }
+                )
+
+                // Group filtered regional VCFs by chromosome before gathering.
+                FILTER_VAR.out
+                    .groupTuple()
+                    .set { filteredMpileupCallsByChrom }
+
                 GATHER_FILTERED_VCFs_mpileup(
-                    filteredgenotypes,
+                    filteredMpileupCallsByChrom,
                     params.refgenome,
                     "filtered",
                     VCF_METADATA.out
                 )
-                GENERATE_FILTERED_VARLIST(GATHER_FILTERED_VCFs_mpileup.out.map{it->it[1]})
-                GATHER_RAW_VCFs_mpileup.out.collect()
-                .combine(GATHER_FILTERED_VCFs_mpileup.out.collect())
-                .set{multiqcwait}
 
+                GENERATE_FILTERED_VARLIST(
+                    GATHER_FILTERED_VCFs_mpileup.out.map { item ->
+                        item[1]
+                    }
+                )
 
+                GATHER_RAW_VCFs_mpileup.out
+                    .collect()
+                    .combine(GATHER_FILTERED_VCFs_mpileup.out.collect())
+                    .set { multiqcwait }
             }
         }
 
