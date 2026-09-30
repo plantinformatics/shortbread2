@@ -279,7 +279,8 @@ process GENERATE_VariantList{
     input:
         val genotypes
     script:
-    snplist="${genotypes.replaceAll('.vcf.gz','-List.vcf.gz')}"
+    snplist = genotypes.name
+        .replaceFirst(/\.vcf\.gz$/, '-List.vcf.gz')
     """
     #!/bin/bash
     echo Generating variant list for "${genotypes}.baseName"
@@ -289,7 +290,6 @@ process GENERATE_VariantList{
     bcftools index ${snplist}
     """
 }
-
 process GENERATE_VARIANTGRAPH
 {
     tag "${chrom}"

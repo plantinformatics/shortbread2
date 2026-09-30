@@ -161,9 +161,16 @@ process RUN_ALIGNMENT {
             bwamem2)
               set +e
 
+              if [[ "${seqtype}" == "PE" ]]; then
               bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_paired}" "\${fast2_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
+              fi
+              if [[ "${seqtype}" == "SE" ]]; then
+              bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_paired}" \
+                | samtools view - \$threads -Su \
+                | samtools sort - -o "\${paired_align}" \$threads
+              fi
 
               pipeline_status=( "\${PIPESTATUS[@]}" )
               set -e
@@ -185,6 +192,14 @@ process RUN_ALIGNMENT {
                   fi
 
                   exit 1
+              fi
+              if [[ "${seqtype}" == "PE" ]]; then
+                bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_single}" \
+                  | samtools view - \$threads -Su \
+                  | samtools sort - -o "\${R1align}" \$threads
+                bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast2_single}" \
+                  | samtools view - \$threads -Su \
+                  | samtools sort - -o "\${R2align}" \$threads
               fi
             ;;
             bowtie2)
@@ -430,7 +445,7 @@ process MERGE_BAMS_BYSAMPLEID{
         mv ${sampleid}.sorted-1.bam ${sampleid}.sorted.bam
 
         samtools index -c -@ $task.cpus ${sampleid}.sorted.bam ${sampleid}.sorted.bam.csi
-        if [[ "${markduplicates}" == "false" ]]
+        if [[ "${markduplicates}" == "true" ]]
         then
             gatk --java-options "-Xms60G -Xmx60G -XX:+UseParallelGC -XX:ParallelGCThreads=$task.cpus" MarkDuplicatesSpark \
                   -I ${sampleid}.sorted.bam \
