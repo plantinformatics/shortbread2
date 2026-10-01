@@ -130,8 +130,8 @@ process RUN_ALIGNMENT {
               set -e
 
               if (( pipeline_status[0] != 0 ||
-                    pipeline_status[1] != 0 ||
-                    pipeline_status[2] != 0 )); then
+                    pipeline_status[1] == 1 ||
+                    pipeline_status[2] == 1 )); then
 
                   echo "ERROR: paired-end bwamem pipeline failed"
                   echo "bwa-mem exit status: \${pipeline_status[0]}"
@@ -165,33 +165,57 @@ process RUN_ALIGNMENT {
               bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_paired}" "\${fast2_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
+
+                pipeline_status=( "\${PIPESTATUS[@]}" )
+                set -e
+
+                if (( pipeline_status[0] != 0 ||
+                      pipeline_status[1] == 1 ||
+                      pipeline_status[2] == 1 )); then
+
+                    echo "ERROR: paired-end bwamem2 pipeline failed"
+                    echo "bwa-mem2 exit status: \${pipeline_status[0]}"
+                    echo "samtools view exit status: \${pipeline_status[1]}"
+                    echo "samtools sort exit status: \${pipeline_status[2]}"
+
+                    if (( pipeline_status[0] == 137 ||
+                          pipeline_status[1] == 137 ||
+                          pipeline_status[2] == 137 )); then
+                        echo "A pipeline component was killed, treating this as a probable OOM"
+                        exit 137
+                    fi
+
+                    exit 1
+                fi
+
               fi
               if [[ "${seqtype}" == "SE" ]]; then
               bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_paired}" \
                 | samtools view - \$threads -Su \
                 | samtools sort - -o "\${paired_align}" \$threads
-              fi
 
-              pipeline_status=( "\${PIPESTATUS[@]}" )
-              set -e
+                pipeline_status=( "\${PIPESTATUS[@]}" )
+                set -e
 
-              if (( pipeline_status[0] != 0 ||
-                    pipeline_status[1] != 0 ||
-                    pipeline_status[2] != 0 )); then
+                if (( pipeline_status[0] != 0 ||
+                      pipeline_status[1] == 1 ||
+                      pipeline_status[2] == 1 )); then
 
-                  echo "ERROR: paired-end bwamem2 pipeline failed"
-                  echo "bwa-mem2 exit status: \${pipeline_status[0]}"
-                  echo "samtools view exit status: \${pipeline_status[1]}"
-                  echo "samtools sort exit status: \${pipeline_status[2]}"
+                    echo "ERROR: paired-end bwamem2 pipeline failed"
+                    echo "bwa-mem2 exit status: \${pipeline_status[0]}"
+                    echo "samtools view exit status: \${pipeline_status[1]}"
+                    echo "samtools sort exit status: \${pipeline_status[2]}"
 
-                  if (( pipeline_status[0] == 137 ||
-                        pipeline_status[1] == 137 ||
-                        pipeline_status[2] == 137 )); then
-                      echo "A pipeline component was killed, treating this as a probable OOM"
-                      exit 137
-                  fi
+                    if (( pipeline_status[0] == 137 ||
+                          pipeline_status[1] == 137 ||
+                          pipeline_status[2] == 137 )); then
+                        echo "A pipeline component was killed, treating this as a probable OOM"
+                        exit 137
+                    fi
 
-                  exit 1
+                    exit 1
+                fi
+
               fi
               if [[ "${seqtype}" == "PE" ]]; then
                 bwa-mem2 mem -t \${threads_align} ${refindex} "\${fast1_single}" \
@@ -211,8 +235,8 @@ process RUN_ALIGNMENT {
               set -e
 
               if (( pipeline_status[0] != 0 ||
-                    pipeline_status[1] != 0 ||
-                    pipeline_status[2] != 0 )); then
+                    pipeline_status[1] == 1 ||
+                    pipeline_status[2] == 1 )); then
 
                   echo "ERROR: paired-end bowtie2 pipeline failed"
                   echo "bowtie2 exit status: \${pipeline_status[0]}"
@@ -300,8 +324,8 @@ process RUN_ALIGNMENT {
               set -e
 
               if (( pipeline_status[0] != 0 ||
-                    pipeline_status[1] != 0 ||
-                    pipeline_status[2] != 0 )); then
+                    pipeline_status[1] == 1 ||
+                    pipeline_status[2] == 1 )); then
 
                   echo "ERROR: paired-end minimap2 pipeline failed"
                   echo "minimap2 exit status: \${pipeline_status[0]}"
