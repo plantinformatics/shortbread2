@@ -533,7 +533,11 @@ workflow {
                     params.refgenome,
                     params.GATKHaplotypeoptions,
                     maxchromsize,
-                    gatkreferencevcf
+                    gatkreferencevcf,
+                    params.Minmapquality,
+                    params.Minbasequality,
+                    params.readdepthminimum,
+                    params.mpileupothersettings
                 )
 
                 // Convert the four-field process output to the downstream-compatible shape:

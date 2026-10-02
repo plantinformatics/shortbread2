@@ -32,6 +32,10 @@ process RUN_GENOTYPE_MPILEUP {
         val otheroptions
         val maxchromsize
         val allele
+        val Minmapquality
+        val Minbasequality
+        val readdepthminimum
+        val mpileupothersettings
     output:
         tuple val("${chrom}"), path("${outputfile}"), path("${outputfileidx}"), val("${indexAvailable}")
     script:
@@ -101,9 +105,11 @@ process RUN_GENOTYPE_MPILEUP {
         set +e
 
         bcftools mpileup \
-            --threads ${task.cpus} \
+            ${mpileupothersettings} --threads ${task.cpus} \
             -Ou \
             -f "${refgenome}" \
+            --min-BQ ${Minbasequality} \
+            --min-MQ ${Minmapquality} \
             --bam-list bam_files.list \
             --annotate FORMAT/DP,FORMAT/AD,FORMAT/ADF,FORMAT/ADR \
             -r "\${intervalvcf}" \
@@ -114,7 +120,7 @@ process RUN_GENOTYPE_MPILEUP {
             -Ou \
         | bcftools +setGT \
             -Ou \
-            -- -t q -n . -i 'FMT/DP=0' \
+            -- -t q -n . -i 'FMT/DP<${readdepthminimum}' \
         | bcftools view \
             --threads ${task.cpus} \
             -v snps,indels,mnps \
