@@ -557,13 +557,13 @@ process VCF_METADATA {
     outputfile="NCBI_genomemetadata_with_rundata.txt"
     """
     cat > ${combined_runmeta} <<EOF
-    ##Shortbread2_analysis_start_date:${starttime}
-    ##Shortbread2_version:${shortbread_version}
-    ##Shortbread2_repo:${shortbread_repo_url}
-    ##Shortbread2_branch:${shortbread_branch}
-    ##Shortbread2_read_trimming_method:${trimmethod}
-    ##Shortbread2_read_aligner_method:${aligner}
-    ##Shortbread2_variant_call_method:${variantcallmethod}
+    ##Shortbread2_analysis_start_date=${starttime}
+    ##Shortbread2_version=${shortbread_version}
+    ##Shortbread2_repo=${shortbread_repo_url}
+    ##Shortbread2_branch=${shortbread_branch}
+    ##Shortbread2_read_trimming_method=${trimmethod}
+    ##Shortbread2_read_aligner_method=${aligner}
+    ##Shortbread2_variant_call_method=${variantcallmethod}
     EOF
 
     cat ${NCBI_meta} ${combined_runmeta} > ${outputfile}
